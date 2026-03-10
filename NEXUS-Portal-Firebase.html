@@ -1,0 +1,1051 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NEXUS — Global Science & Mathematics Research Portal</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Exo+2:wght@300;400;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+
+<!-- FIREBASE SDKs -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged }
+    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  import { getFirestore, collection, addDoc, getDocs, query, orderBy, serverTimestamp, doc, updateDoc }
+    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { getStorage, ref, uploadBytesResumable, getDownloadURL }
+    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
+
+  // ✅ YOUR FIREBASE CONFIG
+  const firebaseConfig = {
+    apiKey: "AIzaSyAGRICXr9BJOeBeu77o0EhYEgfNvSs9Hzw",
+    authDomain: "nexus-research-7896f.firebaseapp.com",
+    projectId: "nexus-research-7896f",
+    storageBucket: "nexus-research-7896f.firebasestorage.app",
+    messagingSenderId: "1023024627015",
+    appId: "1:1023024627015:web:9d73d1dfacb0d94ce76062",
+    measurementId: "G-TJ9X98REE9"
+  };
+
+  const app     = initializeApp(firebaseConfig);
+  const auth    = getAuth(app);
+  const db      = getFirestore(app);
+  const storage = getStorage(app);
+  const provider = new GoogleAuthProvider();
+
+  // ─── EXPOSE TO WINDOW ───
+  window._fb = { auth, db, storage, provider,
+    signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged,
+    collection, addDoc, getDocs, query, orderBy, serverTimestamp, doc, updateDoc,
+    ref, uploadBytesResumable, getDownloadURL };
+
+  // ─── AUTH STATE LISTENER ───
+  onAuthStateChanged(auth, user => {
+    if (user) {
+      window._currentUser = user;
+      applyLoginUI(user);
+      loadMyPapers();
+    } else {
+      window._currentUser = null;
+      resetAuthUI();
+    }
+  });
+</script>
+
+<style>
+:root{--bg:#010814;--bg2:#020d1f;--bg3:#031428;--accent:#00d4ff;--accent2:#7b2fff;--accent3:#00ff88;--accent4:#ff6b35;--gold:#ffd700;--text:#e8f4ff;--text2:#8ab4d4;--text3:#4a7fa0;--border:rgba(0,212,255,0.18);--glow:0 0 20px rgba(0,212,255,0.4);--card:rgba(3,20,40,0.9);}
+*{margin:0;padding:0;box-sizing:border-box;}html{scroll-behavior:smooth;}
+body{background:var(--bg);color:var(--text);font-family:'Exo 2',sans-serif;overflow-x:hidden;}
+#particle-canvas{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none;}
+::-webkit-scrollbar{width:5px;}::-webkit-scrollbar-track{background:#010814;}::-webkit-scrollbar-thumb{background:linear-gradient(var(--accent2),var(--accent));border-radius:3px;}
+
+.page{display:none;min-height:100vh;position:relative;z-index:1;animation:fadeIn 0.4s ease;}
+.page.active{display:block;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(14px);}to{opacity:1;transform:translateY(0);}}
+
+/* NAV */
+nav{position:fixed;top:0;left:0;right:0;z-index:1000;background:rgba(1,8,20,0.96);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;height:62px;}
+.nav-brand{font-family:'Orbitron',sans-serif;font-size:1.3rem;font-weight:900;background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:4px;cursor:pointer;}
+.nav-links{display:flex;gap:0.3rem;align-items:center;flex-wrap:wrap;}
+.nb{background:none;border:1px solid transparent;color:var(--text2);padding:0.3rem 0.65rem;border-radius:4px;cursor:pointer;font-family:'Exo 2',sans-serif;font-size:0.75rem;transition:all 0.25s;letter-spacing:0.8px;}
+.nb:hover{border-color:var(--accent);color:var(--accent);background:rgba(0,212,255,0.07);}
+.nb-cta{background:linear-gradient(135deg,var(--accent2),var(--accent))!important;color:#fff!important;border-color:transparent!important;font-weight:700!important;}
+.nb-cta:hover{box-shadow:var(--glow);transform:scale(1.04)!important;}
+.nav-user{display:none;align-items:center;gap:0.6rem;cursor:pointer;background:rgba(0,212,255,0.07);border:1px solid var(--border);border-radius:50px;padding:0.3rem 0.85rem 0.3rem 0.3rem;}
+.nav-av{width:30px;height:30px;border-radius:50%;border:2px solid var(--accent);object-fit:cover;}
+.nav-uname{font-size:0.75rem;color:var(--accent);font-family:'Share Tech Mono',monospace;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+/* WRAP */
+.wrap{padding:5rem 1.5rem 3rem;max-width:1280px;margin:0 auto;}
+.sec-tag{display:inline-block;font-size:0.68rem;letter-spacing:3px;text-transform:uppercase;color:var(--accent);border:1px solid rgba(0,212,255,0.3);padding:0.18rem 0.9rem;border-radius:50px;margin-bottom:0.75rem;}
+.sec-title{font-family:'Orbitron',sans-serif;font-size:clamp(1.5rem,3.5vw,2.6rem);font-weight:700;margin-bottom:0.75rem;}
+.sec-title span{color:var(--accent);}
+.sec-hdr{text-align:center;margin-bottom:2.5rem;}
+
+/* CARD */
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.5rem;transition:all 0.3s;position:relative;overflow:hidden;}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--accent2),var(--accent),var(--accent3));transform:scaleX(0);transform-origin:left;transition:transform 0.4s;}
+.card:hover{border-color:rgba(0,212,255,0.4);transform:translateY(-4px);box-shadow:0 16px 50px rgba(0,0,30,0.5),var(--glow);}
+.card:hover::before{transform:scaleX(1);}
+
+/* GRIDS */
+.g2{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:1.25rem;}
+.g3{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1.25rem;}
+.g4{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1.25rem;}
+
+/* BUTTONS */
+.btn{padding:0.65rem 1.6rem;border-radius:6px;font-family:'Exo 2',sans-serif;font-size:0.88rem;font-weight:700;cursor:pointer;letter-spacing:1.2px;transition:all 0.3s;border:none;}
+.bp{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;}
+.bp:hover{transform:translateY(-2px);box-shadow:0 10px 30px rgba(0,212,255,0.35);}
+.bs{background:transparent;color:var(--accent);border:1px solid var(--accent);}
+.bs:hover{background:rgba(0,212,255,0.08);box-shadow:var(--glow);}
+.bg-btn{background:linear-gradient(135deg,#1a73e8,#0d47a1);color:#fff;display:flex;align-items:center;gap:0.6rem;justify-content:center;width:100%;padding:0.75rem;}
+.bg-btn:hover{box-shadow:0 8px 28px rgba(26,115,232,0.45);transform:translateY(-2px);}
+.b-gold{background:linear-gradient(135deg,#b8860b,var(--gold));color:#000;}
+.b-gold:hover{box-shadow:0 8px 28px rgba(255,215,0,0.4);}
+
+/* FORM */
+.fwrap{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:2.2rem;position:relative;overflow:hidden;max-width:700px;margin:0 auto;}
+.fwrap::before{content:'';position:absolute;top:-40%;left:-40%;width:180%;height:180%;background:radial-gradient(ellipse,rgba(0,212,255,0.03),transparent 65%);pointer-events:none;}
+.ft{font-family:'Orbitron',sans-serif;font-size:1.3rem;font-weight:700;background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:0.3rem;}
+.fs{color:var(--text3);font-size:0.8rem;margin-bottom:1.6rem;}
+.fg{margin-bottom:1.2rem;}
+.fr{display:grid;grid-template-columns:1fr 1fr;gap:1rem;}
+label{display:block;font-size:0.7rem;letter-spacing:2px;text-transform:uppercase;color:var(--text2);margin-bottom:0.38rem;}
+input,select,textarea{width:100%;background:rgba(0,20,50,0.55);border:1px solid var(--border);border-radius:6px;padding:0.62rem 0.9rem;color:var(--text);font-family:'Exo 2',sans-serif;font-size:0.9rem;transition:all 0.25s;outline:none;}
+input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 12px rgba(0,212,255,0.18);background:rgba(0,20,50,0.85);}
+select option{background:#010814;}
+textarea{resize:vertical;min-height:90px;}
+
+/* BADGE */
+.badge{display:inline-block;padding:0.18rem 0.55rem;border-radius:50px;font-size:0.67rem;font-weight:600;letter-spacing:0.8px;}
+.bb{background:rgba(0,212,255,0.12);color:var(--accent);border:1px solid rgba(0,212,255,0.3);}
+.bg2{background:rgba(0,255,136,0.12);color:var(--accent3);border:1px solid rgba(0,255,136,0.3);}
+.bp2{background:rgba(123,47,255,0.12);color:var(--accent2);border:1px solid rgba(123,47,255,0.3);}
+.bgold{background:rgba(255,215,0,0.12);color:var(--gold);border:1px solid rgba(255,215,0,0.3);}
+.bo{background:rgba(255,107,53,0.12);color:var(--accent4);border:1px solid rgba(255,107,53,0.3);}
+.br{background:rgba(255,50,50,0.12);color:#ff5050;border:1px solid rgba(255,50,50,0.3);}
+
+/* ALERT */
+.alert{border-radius:8px;padding:0.82rem 1.1rem;margin:0.82rem 0;font-size:0.85rem;}
+.a-ok{background:rgba(0,255,136,0.07);border:1px solid rgba(0,255,136,0.3);color:var(--accent3);}
+.a-info{background:rgba(0,212,255,0.07);border:1px solid rgba(0,212,255,0.3);color:var(--accent);}
+.a-gold{background:rgba(255,215,0,0.07);border:1px solid rgba(255,215,0,0.3);color:var(--gold);}
+.a-err{background:rgba(255,50,50,0.07);border:1px solid rgba(255,50,50,0.3);color:#ff5050;}
+.a-warn{background:rgba(255,107,53,0.07);border:1px solid rgba(255,107,53,0.3);color:var(--accent4);}
+
+/* TABLE */
+table{width:100%;border-collapse:collapse;}
+thead tr{background:rgba(0,212,255,0.05);border-bottom:1px solid var(--border);}
+th{font-family:'Orbitron',sans-serif;font-size:0.65rem;letter-spacing:2px;color:var(--accent);padding:0.62rem 0.9rem;text-align:left;}
+td{padding:0.62rem 0.9rem;border-bottom:1px solid rgba(255,255,255,0.04);font-size:0.85rem;color:var(--text2);}
+tr:hover td{background:rgba(0,212,255,0.03);color:var(--text);}
+
+.divider{height:1px;background:linear-gradient(90deg,transparent,var(--border),transparent);margin:1.4rem 0;}
+.formula{background:rgba(0,10,30,0.8);border:1px solid rgba(0,212,255,0.13);border-radius:8px;padding:0.82rem 1.1rem;font-family:'Share Tech Mono',monospace;color:var(--accent3);font-size:0.82rem;margin:0.82rem 0;line-height:1.7;}
+
+/* PROGRESS */
+.pbar{height:3px;background:rgba(0,212,255,0.1);border-radius:2px;overflow:hidden;margin:0.35rem 0;}
+.pfill{height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent));border-radius:2px;transition:width 0.4s ease;}
+
+/* UPLOAD ZONE */
+.upzone{border:2px dashed var(--border);border-radius:10px;padding:1.8rem;text-align:center;cursor:pointer;transition:all 0.3s;position:relative;}
+.upzone:hover,.upzone.drag{border-color:var(--accent);background:rgba(0,212,255,0.04);}
+.upzone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;}
+
+/* SPINNER */
+.spin{width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;display:inline-block;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.loading{display:flex;align-items:center;gap:0.6rem;padding:2.5rem;justify-content:center;color:var(--text3);font-family:'Share Tech Mono',monospace;font-size:0.82rem;}
+
+/* UPLOAD PROGRESS */
+.upload-prog{background:rgba(0,20,50,0.8);border:1px solid var(--border);border-radius:10px;padding:1.2rem;margin-top:1rem;display:none;}
+.upload-prog.show{display:block;}
+.up-filename{font-size:0.82rem;color:var(--text2);margin-bottom:0.6rem;display:flex;align-items:center;gap:0.5rem;}
+.up-bar-wrap{height:8px;background:rgba(0,212,255,0.1);border-radius:4px;overflow:hidden;}
+.up-bar{height:100%;width:0%;background:linear-gradient(90deg,var(--accent2),var(--accent),var(--accent3));border-radius:4px;transition:width 0.2s;}
+.up-percent{font-family:'Share Tech Mono',monospace;font-size:0.75rem;color:var(--accent);margin-top:0.4rem;text-align:right;}
+.up-status{font-size:0.78rem;color:var(--accent3);margin-top:0.4rem;}
+
+/* HERO */
+.hero-inner{min-height:calc(100vh - 62px);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:2rem;position:relative;overflow:hidden;}
+.hfbg{position:absolute;font-family:'Share Tech Mono',monospace;color:rgba(0,212,255,0.033);font-size:0.8rem;white-space:nowrap;pointer-events:none;animation:drift 18s linear infinite;}
+@keyframes drift{0%{transform:translateX(-100vw);}100%{transform:translateX(100vw);}}
+.hbadge{display:inline-block;background:rgba(0,212,255,0.09);border:1px solid var(--accent);color:var(--accent);padding:0.26rem 1rem;border-radius:50px;font-size:0.7rem;letter-spacing:3px;text-transform:uppercase;margin-bottom:1.2rem;animation:pg 2s infinite;}
+@keyframes pg{0%,100%{box-shadow:0 0 8px rgba(0,212,255,0.25);}50%{box-shadow:0 0 28px rgba(0,212,255,0.65);}}
+.ht{font-family:'Orbitron',sans-serif;font-size:clamp(2rem,6vw,5rem);font-weight:900;line-height:1.1;margin-bottom:0.85rem;}
+.ht .t1{color:var(--text);}
+.ht .t2{background:linear-gradient(90deg,var(--accent),var(--accent2),var(--accent3));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-size:200%;animation:gm 3s linear infinite;}
+@keyframes gm{0%{background-position:0%;}100%{background-position:200%;}}
+.hsub{font-size:1.05rem;color:var(--text2);max-width:650px;line-height:1.85;margin-bottom:1.6rem;}
+.hbtns{display:flex;gap:0.82rem;flex-wrap:wrap;justify-content:center;margin-bottom:2.8rem;}
+.hstats{display:flex;gap:2.2rem;flex-wrap:wrap;justify-content:center;}
+.hs-n{font-family:'Orbitron',sans-serif;font-size:1.8rem;font-weight:700;color:var(--accent);}
+.hs-l{font-size:0.68rem;color:var(--text3);letter-spacing:2px;text-transform:uppercase;}
+
+/* TICKER */
+.ticker{background:rgba(0,212,255,0.04);border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:0.42rem 0;overflow:hidden;}
+.ticker-inner{display:flex;gap:2.5rem;animation:tick 35s linear infinite;white-space:nowrap;}
+.ti{font-family:'Share Tech Mono',monospace;font-size:0.76rem;color:var(--text2);}
+.ti span{color:var(--accent);}
+@keyframes tick{from{transform:translateX(0);}to{transform:translateX(-50%);}}</style>
+</head>
+<body>
+<canvas id="particle-canvas"></canvas>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-brand" onclick="go('hero')">⚛ NEXUS</div>
+  <div class="nav-links">
+    <button class="nb" onclick="go('hero')">Home</button>
+    <button class="nb" onclick="go('categories')">Categories</button>
+    <button class="nb" onclick="go('submit')">Submit Paper</button>
+    <button class="nb" onclick="go('sponsors')">Sponsors</button>
+    <button class="nb" onclick="go('leaderboard')">Rankings</button>
+    <button class="nb" onclick="go('news')">Science News</button>
+    <button class="nb" onclick="go('my-papers')">My Papers</button>
+    <div id="nav-auth-btns">
+      <button class="nb nb-cta" onclick="go('login')">Login / Register</button>
+    </div>
+    <div class="nav-user" id="nav-user" onclick="go('dashboard')" style="display:none">
+      <img class="nav-av" id="nav-photo" src="" alt="user">
+      <span class="nav-uname" id="nav-uname">User</span>
+      <button class="nb" onclick="event.stopPropagation();doSignOut()" style="font-size:0.65rem;padding:0.2rem 0.5rem;margin-left:0.3rem">Logout</button>
+    </div>
+  </div>
+</nav>
+
+<!-- ==================== HERO ==================== -->
+<div id="hero" class="page active">
+  <div class="hero-inner">
+    <div class="hfbg" style="top:8%">E=mc² · ∇²ψ+V(x)ψ=Eψ · ζ(s)=Σn⁻ˢ · |ψ⟩=α|0⟩+β|1⟩ · ∮E·dA=Q/ε₀</div>
+    <div class="hfbg" style="top:40%;animation-delay:-9s;opacity:0.5">∫∫∫ · Euler: e^(iπ)+1=0 · π≈3.14159 · φ=(1+√5)/2 · Riemann · Goldbach</div>
+    <div class="hfbg" style="top:72%;animation-delay:-16s">∇×B=μ₀J+μ₀ε₀∂E/∂t · DNA→RNA→Protein · CRISPR · Schrödinger · Hawking</div>
+    <div class="hbadge">🔬 World's Premier Science & Math Research Platform</div>
+    <h1 class="ht"><span class="t1">DISCOVER · INNOVATE</span><span class="t2">NEXUS SCIENCE PORTAL</span></h1>
+    <p class="hsub">The global nexus where scientific curiosity meets academic excellence. Submit breakthrough research, get peer reviewed, get sponsored, get recognized — all in one platform.</p>
+    <div style="font-family:'Share Tech Mono',monospace;font-size:0.82rem;color:var(--accent3);opacity:0.7;margin-bottom:1.8rem">e^(iπ)+1=0 &nbsp;|&nbsp; ∇·E=ρ/ε₀ &nbsp;|&nbsp; F=Gm₁m₂/r² &nbsp;|&nbsp; ΔG°= -RT ln K</div>
+    <div class="hbtns">
+      <button class="btn bp" onclick="go('login')">🚀 Start Research Journey</button>
+      <button class="btn bs" onclick="go('submit')">📝 Submit Paper</button>
+      <button class="btn bs" onclick="go('categories')">📚 Categories</button>
+    </div>
+    <div class="hstats">
+      <div><div class="hs-n" id="s1">0</div><div class="hs-l">Papers Submitted</div></div>
+      <div><div class="hs-n" id="s2" style="color:var(--accent3)">0</div><div class="hs-l">Institutions</div></div>
+      <div><div class="hs-n" id="s3" style="color:var(--gold)">0</div><div class="hs-l">Sponsors</div></div>
+      <div><div class="hs-n" id="s4" style="color:var(--accent2)">0</div><div class="hs-l">Countries</div></div>
+    </div>
+  </div>
+  <div class="ticker">
+    <div class="ticker-inner">
+      <div class="ti">🏆 <span>AWARDED:</span> Quantum Computing breakthrough — IIT Bombay</div>
+      <div class="ti">📄 <span>NEW PAPER:</span> Prime Distribution Theorem — Cambridge Univ.</div>
+      <div class="ti">💰 <span>SPONSORED:</span> Neural Network research — ₹5 Lakh grant</div>
+      <div class="ti">🔬 <span>BREAKTHROUGH:</span> CRISPR algorithm published on NEXUS</div>
+      <div class="ti">🥇 <span>WINNER:</span> Topology Research Excellence Award 2025</div>
+      <div class="ti">🏆 <span>AWARDED:</span> Quantum Computing breakthrough — IIT Bombay</div>
+      <div class="ti">📄 <span>NEW PAPER:</span> Prime Distribution Theorem — Cambridge Univ.</div>
+      <div class="ti">💰 <span>SPONSORED:</span> Neural Network research — ₹5 Lakh grant</div>
+    </div>
+  </div>
+  <div class="wrap">
+    <div class="sec-hdr"><div class="sec-tag">Why NEXUS</div><h2 class="sec-title">Built for <span>Science & Ambition</span></h2></div>
+    <div class="g4">
+      <div class="card" style="text-align:center;cursor:pointer" onclick="go('login')"><div style="font-size:1.8rem;margin-bottom:0.6rem">🔐</div><div style="font-family:'Orbitron',sans-serif;font-size:0.8rem;color:var(--accent);margin-bottom:0.35rem">GMAIL LOGIN</div><div style="font-size:0.78rem;color:var(--text2)">Sign in instantly with your Google account. Secure & fast.</div></div>
+      <div class="card" style="text-align:center;cursor:pointer" onclick="go('submit')"><div style="font-size:1.8rem;margin-bottom:0.6rem">☁️</div><div style="font-family:'Orbitron',sans-serif;font-size:0.8rem;color:var(--accent2);margin-bottom:0.35rem">CLOUD STORAGE</div><div style="font-size:0.78rem;color:var(--text2)">PDFs saved to Firebase Cloud. Access from anywhere, forever.</div></div>
+      <div class="card" style="text-align:center;cursor:pointer" onclick="go('leaderboard')"><div style="font-size:1.8rem;margin-bottom:0.6rem">🏅</div><div style="font-family:'Orbitron',sans-serif;font-size:0.8rem;color:var(--accent3);margin-bottom:0.35rem">RECOGNITION</div><div style="font-size:0.78rem;color:var(--text2)">Earn medals, certificates, and global academic recognition.</div></div>
+      <div class="card" style="text-align:center;cursor:pointer" onclick="go('sponsors')"><div style="font-size:1.8rem;margin-bottom:0.6rem">💰</div><div style="font-family:'Orbitron',sans-serif;font-size:0.8rem;color:var(--gold);margin-bottom:0.35rem">FUNDING</div><div style="font-size:0.78rem;color:var(--text2)">Connect with 52+ global research sponsors and grants.</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== LOGIN ==================== -->
+<div id="login" class="page">
+  <div class="wrap" style="display:flex;align-items:center;justify-content:center;min-height:90vh;">
+    <div class="fwrap" style="max-width:460px">
+      <div class="ft">Sign In to NEXUS</div>
+      <div class="fs">Access your research dashboard — submit papers, track progress, connect with sponsors.</div>
+
+      <!-- DNA Animation -->
+      <div style="display:flex;gap:5px;justify-content:center;margin:1.2rem 0">
+        <div style="width:9px;height:9px;border-radius:50%;background:var(--accent);animation:dw 1.5s ease-in-out infinite"></div>
+        <div style="width:9px;height:9px;border-radius:50%;background:var(--accent2);animation:dw 1.5s ease-in-out infinite;animation-delay:0.2s"></div>
+        <div style="width:9px;height:9px;border-radius:50%;background:var(--accent3);animation:dw 1.5s ease-in-out infinite;animation-delay:0.4s"></div>
+        <div style="width:9px;height:9px;border-radius:50%;background:var(--accent);animation:dw 1.5s ease-in-out infinite;animation-delay:0.6s"></div>
+        <div style="width:9px;height:9px;border-radius:50%;background:var(--accent2);animation:dw 1.5s ease-in-out infinite;animation-delay:0.8s"></div>
+      </div>
+      <style>@keyframes dw{0%,100%{transform:translateY(0);}50%{transform:translateY(-10px);}}</style>
+
+      <!-- GOOGLE SIGN IN BUTTON -->
+      <button class="btn bg-btn" onclick="doGmailLogin()">
+        <svg width="18" height="18" viewBox="0 0 24 24">
+          <path fill="#EA4335" d="M5.26 9.77A7.07 7.07 0 0 1 12 4.9c1.69 0 3.21.6 4.41 1.57l3.3-3.3A11.97 11.97 0 0 0 12 .5C7.31.5 3.26 3.44 1.5 7.73l3.76 2.04z"/>
+          <path fill="#34A853" d="M16.04 18.01A7.07 7.07 0 0 1 12 19.1c-3.04 0-5.63-1.93-6.64-4.65L1.52 16.5C3.26 20.53 7.31 23.5 12 23.5c2.97 0 5.81-1.08 7.95-3.06l-3.91-2.43z"/>
+          <path fill="#FBBC05" d="M19.95 20.44A11.97 11.97 0 0 0 23.5 12c0-.71-.06-1.41-.18-2.09H12v4.46h6.48a5.54 5.54 0 0 1-2.4 3.63l3.87 2.44z"/>
+          <path fill="#4285F4" d="M5.36 14.45A7.07 7.07 0 0 1 4.9 12c0-.85.15-1.67.43-2.43L1.5 7.53A11.97 11.97 0 0 0 .5 12c0 1.92.45 3.73 1.24 5.33l3.62-2.88z"/>
+        </svg>
+        Continue with Google / Gmail
+      </button>
+
+      <div id="login-msg"></div>
+      <div class="divider"></div>
+      <div style="text-align:center;font-size:0.82rem;color:var(--text3)">
+        By signing in you agree to NEXUS
+        <span style="color:var(--accent);cursor:pointer" onclick="go('terms')">Terms</span> &
+        <span style="color:var(--accent);cursor:pointer" onclick="go('privacy')">Privacy Policy</span>
+      </div>
+      <div style="text-align:center;margin-top:0.85rem;font-size:0.82rem;color:var(--text3)">
+        Are you a sponsor? <span style="color:var(--gold);cursor:pointer" onclick="go('sponsor-register')">Sponsor Portal →</span>
+      </div>
+
+      <!-- What happens info -->
+      <div class="alert a-info" style="margin-top:1.2rem;font-size:0.78rem">
+        ℹ️ Clicking Google login opens a secure Google popup. Your Gmail profile is used to create your NEXUS researcher account automatically.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== DASHBOARD ==================== -->
+<div id="dashboard" class="page">
+  <div class="wrap">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:2rem">
+      <div>
+        <div style="font-size:0.72rem;color:var(--text3);letter-spacing:2px;text-transform:uppercase;margin-bottom:0.22rem">Welcome back,</div>
+        <div style="font-family:'Orbitron',sans-serif;font-size:1.6rem;font-weight:700;color:var(--accent)" id="dash-name">Researcher</div>
+        <div style="font-size:0.8rem;color:var(--text3)" id="dash-email">Loading...</div>
+        <div style="font-size:0.72rem;color:var(--text3);margin-top:0.2rem" id="dash-nexusid"></div>
+      </div>
+      <div style="display:flex;gap:0.45rem;flex-wrap:wrap">
+        <span class="badge bb">✓ Gmail Verified</span>
+        <span class="badge bg2">🔬 Researcher</span>
+        <span id="dash-paperbadge" class="badge bp2">0 Papers</span>
+      </div>
+    </div>
+    <div class="g4" style="margin-bottom:2rem">
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.3rem;text-align:center"><div style="font-family:'Orbitron',sans-serif;font-size:1.9rem;font-weight:700;color:var(--accent)" id="dash-count">0</div><div style="font-size:0.68rem;color:var(--text3);letter-spacing:2px;text-transform:uppercase;margin-top:0.22rem">Papers Submitted</div></div>
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.3rem;text-align:center"><div style="font-family:'Orbitron',sans-serif;font-size:1.9rem;font-weight:700;color:var(--accent3)" id="dash-accepted">0</div><div style="font-size:0.68rem;color:var(--text3);letter-spacing:2px;text-transform:uppercase;margin-top:0.22rem">Accepted</div></div>
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.3rem;text-align:center"><div style="font-family:'Orbitron',sans-serif;font-size:1.9rem;font-weight:700;color:var(--gold)">₹0</div><div style="font-size:0.68rem;color:var(--text3);letter-spacing:2px;text-transform:uppercase;margin-top:0.22rem">Grants</div></div>
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.3rem;text-align:center"><div style="font-family:'Orbitron',sans-serif;font-size:1.9rem;font-weight:700;color:var(--accent2)" id="dash-views">0</div><div style="font-size:0.68rem;color:var(--text3);letter-spacing:2px;text-transform:uppercase;margin-top:0.22rem">Profile Views</div></div>
+    </div>
+    <div class="g2">
+      <div class="card">
+        <div style="font-family:'Orbitron',sans-serif;font-size:0.82rem;color:var(--accent);margin-bottom:1rem;letter-spacing:1px">MY SUBMISSIONS</div>
+        <div id="my-papers-table">
+          <div class="loading"><div class="spin"></div>Loading your papers…</div>
+        </div>
+        <button class="btn bp" onclick="go('submit')" style="margin-top:0.85rem;width:100%;padding:0.52rem">+ Submit New Paper</button>
+      </div>
+      <div class="card">
+        <div style="font-family:'Orbitron',sans-serif;font-size:0.82rem;color:var(--gold);margin-bottom:1rem;letter-spacing:1px">QUICK ACTIONS</div>
+        <div style="display:flex;flex-direction:column;gap:0.65rem">
+          <button class="btn bp" onclick="go('submit')" style="width:100%;text-align:left;padding:0.65rem 1rem">📝 Submit Research Paper</button>
+          <button class="btn bs" onclick="go('sponsors')" style="width:100%;text-align:left;padding:0.65rem 1rem">💰 Apply for Sponsorship</button>
+          <button class="btn bs" onclick="go('leaderboard')" style="width:100%;text-align:left;padding:0.65rem 1rem">🏆 View Global Rankings</button>
+          <button class="btn bs" onclick="go('my-papers')" style="width:100%;text-align:left;padding:0.65rem 1rem">📁 View All My Papers</button>
+          <button class="btn bs" onclick="go('categories')" style="width:100%;text-align:left;padding:0.65rem 1rem">📚 Browse Categories</button>
+        </div>
+        <div class="alert a-gold" style="margin-top:1rem;font-size:0.78rem">
+          🏆 All your submitted PDFs are securely saved to Firebase Cloud Storage. Access them anytime from "My Papers".
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SUBMIT PAPER ==================== -->
+<div id="submit" class="page">
+  <div class="wrap">
+    <div class="sec-hdr">
+      <div class="sec-tag">Research Submission</div>
+      <h2 class="sec-title">Submit Your <span>Research Paper</span></h2>
+      <p style="color:var(--text2);font-size:0.95rem;max-width:620px;margin:0 auto;line-height:1.8">Your paper and PDF will be saved to <strong style="color:var(--accent)">Firebase Cloud Storage</strong>. Access it forever from your dashboard.</p>
+    </div>
+
+    <!-- NOT LOGGED IN WARNING -->
+    <div id="submit-login-warn" style="display:none;max-width:560px;margin:0 auto">
+      <div class="alert a-warn">⚠️ You must be logged in to submit a paper.</div>
+      <button class="btn bp" onclick="go('login')" style="width:100%;margin-top:0.5rem">🔐 Login with Gmail to Continue</button>
+    </div>
+
+    <div id="submit-form-wrap" class="fwrap" style="max-width:820px;display:none">
+      <!-- STEP 1 -->
+      <div id="sf1">
+        <div class="ft">Paper Details</div>
+        <div class="fs">Fill in your research paper information</div>
+        <div class="fg"><label>Paper Title *</label><input type="text" id="s-title" placeholder="Full title of your research paper"></div>
+        <div class="fr">
+          <div class="fg"><label>Category *</label>
+            <select id="s-cat" onchange="updateSubcat()">
+              <option value="">Select Category</option>
+              <option>Pure Mathematics</option><option>Applied Mathematics</option>
+              <option>Theoretical Physics</option><option>Experimental Physics</option>
+              <option>Astrophysics & Cosmology</option><option>Quantum Computing</option>
+              <option>Chemistry</option><option>Biology & Life Sciences</option>
+              <option>Computer Science & AI</option><option>Nanotechnology</option>
+              <option>Environmental Science</option><option>Interdisciplinary</option>
+            </select>
+          </div>
+          <div class="fg"><label>Sub-Category *</label><select id="s-subcat"><option>Select Category First</option></select></div>
+        </div>
+        <div class="fg"><label>Abstract * (200–500 words)</label><textarea id="s-abstract" style="min-height:120px" placeholder="Background, methodology, key findings, and conclusions of your research..."></textarea></div>
+        <div class="fg"><label>Keywords *</label><input type="text" id="s-keywords" placeholder="e.g. quantum entanglement, Riemann hypothesis, CRISPR, topology"></div>
+        <div class="fr">
+          <div class="fg"><label>College / University *</label><input type="text" id="s-college" placeholder="e.g. IIT Bombay, MIT, Oxford"></div>
+          <div class="fg"><label>Department *</label><input type="text" id="s-dept" placeholder="e.g. Department of Physics"></div>
+        </div>
+        <div class="fr">
+          <div class="fg"><label>Research Type *</label>
+            <select id="s-type">
+              <option>Original Research</option><option>Review Article</option>
+              <option>Short Communication</option><option>Case Study</option>
+              <option>Thesis Extract</option>
+            </select>
+          </div>
+          <div class="fg"><label>Co-Authors</label><input type="text" id="s-coauthors" placeholder="Separate names with commas"></div>
+        </div>
+        <div class="fg"><label>Funding Acknowledgment</label><textarea style="min-height:65px" id="s-funding" placeholder="Acknowledge funding sources, or leave blank if self-funded."></textarea></div>
+
+        <!-- PDF UPLOAD -->
+        <div class="fg">
+          <label>Upload Research Paper PDF *</label>
+          <div class="upzone" id="upzone">
+            <input type="file" id="pdf-file" accept=".pdf" onchange="handleFileSelect(event)">
+            <div style="font-size:2rem;margin-bottom:0.5rem">📄</div>
+            <div style="color:var(--text2);font-size:0.88rem" id="upzone-text">Click to upload your PDF or drag & drop here</div>
+            <div style="font-size:0.72rem;color:var(--text3);margin-top:0.25rem">PDF only · Maximum 25MB</div>
+          </div>
+          <div id="file-selected" style="display:none;margin-top:0.5rem;padding:0.65rem 0.9rem;background:rgba(0,255,136,0.07);border:1px solid rgba(0,255,136,0.3);border-radius:6px;font-size:0.82rem;color:var(--accent3)"></div>
+        </div>
+
+        <!-- UPLOAD PROGRESS BAR -->
+        <div class="upload-prog" id="upload-prog">
+          <div class="up-filename"><div class="spin"></div><span id="up-fname">Uploading...</span></div>
+          <div class="up-bar-wrap"><div class="up-bar" id="up-bar"></div></div>
+          <div class="up-percent" id="up-percent">0%</div>
+          <div class="up-status" id="up-status">Uploading to Firebase Cloud Storage…</div>
+        </div>
+
+        <div id="submit-msg"></div>
+
+        <div style="margin:1.2rem 0">
+          <div style="display:flex;align-items:flex-start;gap:0.65rem;margin-bottom:0.65rem">
+            <input type="checkbox" id="s-orig" style="width:auto;margin-top:3px">
+            <label style="text-transform:none;font-size:0.82rem;color:var(--text2);letter-spacing:0">This manuscript is original work and has not been submitted elsewhere</label>
+          </div>
+          <div style="display:flex;align-items:flex-start;gap:0.65rem">
+            <input type="checkbox" id="s-agree" style="width:auto;margin-top:3px">
+            <label style="text-transform:none;font-size:0.82rem;color:var(--text2);letter-spacing:0">I agree to NEXUS <span style="color:var(--accent);cursor:pointer" onclick="go('guidelines')">submission guidelines</span> and ethics policy</label>
+          </div>
+        </div>
+
+        <button class="btn bp" id="submit-btn" onclick="submitPaper()" style="width:100%">🚀 Submit & Upload to Cloud</button>
+      </div>
+    </div>
+
+    <!-- WHERE IS SAVED INFO BOX -->
+    <div style="max-width:820px;margin:1.5rem auto">
+      <div class="card" style="background:rgba(0,212,255,0.03)">
+        <div style="font-family:'Orbitron',sans-serif;font-size:0.78rem;color:var(--accent);margin-bottom:1rem;letter-spacing:2px">☁️ WHERE YOUR PDF IS SAVED</div>
+        <div class="g3" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))">
+          <div style="text-align:center;padding:1rem">
+            <div style="font-size:1.8rem;margin-bottom:0.5rem">📄</div>
+            <div style="font-size:0.78rem;font-weight:600;color:var(--accent);margin-bottom:0.3rem">PDF File</div>
+            <div style="font-size:0.72rem;color:var(--text2)">Saved to Firebase Storage<br><span style="color:var(--accent3)">papers/{userID}/{filename}</span></div>
+          </div>
+          <div style="text-align:center;padding:1rem">
+            <div style="font-size:1.8rem;margin-bottom:0.5rem">🗄️</div>
+            <div style="font-size:0.78rem;font-weight:600;color:var(--accent2);margin-bottom:0.3rem">Form Data</div>
+            <div style="font-size:0.72rem;color:var(--text2)">Saved to Firestore DB<br><span style="color:var(--accent3)">papers collection</span></div>
+          </div>
+          <div style="text-align:center;padding:1rem">
+            <div style="font-size:1.8rem;margin-bottom:0.5rem">🔗</div>
+            <div style="font-size:0.78rem;font-weight:600;color:var(--accent3);margin-bottom:0.3rem">Download Link</div>
+            <div style="font-size:0.72rem;color:var(--text2)">Permanent URL saved<br><span style="color:var(--accent3)">accessible anytime</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SUBMIT SUCCESS ==================== -->
+<div id="submit-success" class="page">
+  <div class="wrap" style="text-align:center;padding-top:6rem">
+    <div style="font-size:4.5rem;animation:sb 0.6s ease">🎓</div>
+    <style>@keyframes sb{0%{transform:scale(0);}80%{transform:scale(1.18);}100%{transform:scale(1);}}</style>
+    <div style="font-family:'Orbitron',sans-serif;font-size:1.7rem;background:linear-gradient(90deg,var(--gold),var(--accent3),var(--accent));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin:0.75rem 0">Paper Submitted & Saved!</div>
+    <p style="color:var(--text2);max-width:560px;margin:1rem auto;line-height:1.8">Your research paper has been successfully uploaded to <strong style="color:var(--accent)">Firebase Cloud Storage</strong> and all details saved to the database.</p>
+
+    <div class="card" style="max-width:520px;margin:0 auto 1.5rem">
+      <div style="font-family:'Orbitron',sans-serif;font-size:0.72rem;color:var(--text3);letter-spacing:2px;margin-bottom:0.4rem">SUBMISSION DETAILS</div>
+      <div style="font-family:'Orbitron',sans-serif;font-size:1.1rem;color:var(--accent);letter-spacing:2px;margin-bottom:0.85rem" id="success-id">NXS-PAPER-2025-XXXXX</div>
+      <div class="divider"></div>
+      <div id="success-details" style="font-size:0.82rem;color:var(--text2);line-height:2">Loading...</div>
+      <div class="divider"></div>
+      <div style="font-size:0.78rem;color:var(--text3);margin-bottom:0.35rem">PDF STORAGE LOCATION</div>
+      <div id="success-pdf-url" style="font-family:'Share Tech Mono',monospace;font-size:0.72rem;color:var(--accent3);word-break:break-all;background:rgba(0,20,50,0.5);padding:0.65rem;border-radius:6px">Uploading…</div>
+    </div>
+
+    <div class="alert a-gold" style="max-width:500px;margin:0 auto 1.5rem">
+      🏆 You are now eligible for NEXUS Sponsor Matching! Sponsors will review your abstract.
+    </div>
+    <div style="display:flex;gap:0.85rem;justify-content:center;flex-wrap:wrap">
+      <button class="btn bp" onclick="go('my-papers')">📁 View My Papers</button>
+      <button class="btn bs" onclick="go('dashboard')">📊 Dashboard</button>
+      <button class="btn bs" onclick="go('sponsors')">💰 View Sponsors</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== MY PAPERS ==================== -->
+<div id="my-papers" class="page">
+  <div class="wrap">
+    <div class="sec-hdr">
+      <div class="sec-tag">My Research</div>
+      <h2 class="sec-title">My <span>Submitted Papers</span></h2>
+      <p style="color:var(--text2);font-size:0.95rem;max-width:600px;margin:0 auto">All your research papers — PDFs stored securely in Firebase Cloud Storage.</p>
+    </div>
+    <div id="my-papers-list">
+      <div class="loading"><div class="spin"></div>Loading your papers from database…</div>
+    </div>
+    <div style="text-align:center;margin-top:2rem">
+      <button class="btn bp" onclick="go('submit')">+ Submit New Paper</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== CATEGORIES ==================== -->
+<div id="categories" class="page">
+  <div class="wrap">
+    <div class="sec-hdr"><div class="sec-tag">Research Domains</div><h2 class="sec-title">All Science & Math <span>Categories</span></h2><p style="color:var(--text2);font-size:0.95rem;max-width:600px;margin:0 auto">Click any category to explore. Every category has a dedicated submit button.</p></div>
+    <div class="formula">∫∫∫ Ω f dV · ∑ₙaₙxⁿ · ∇²φ=0 · E=hf · PV=nRT · ΔG=ΔH−TΔS · |ψ⟩=α|0⟩+β|1⟩</div>
+    <div class="g3" style="margin-top:1.5rem" id="cat-grid">
+      <!-- JS generates these -->
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SPONSORS ==================== -->
+<div id="sponsors" class="page">
+  <div class="wrap">
+    <div class="sec-hdr"><div class="sec-tag">Research Funding</div><h2 class="sec-title">Sponsors & <span>Grant Opportunities</span></h2></div>
+    <div class="g3" style="margin-bottom:2.5rem">
+      <div class="card" style="border-color:rgba(255,215,0,0.3)"><div style="font-size:2rem;margin-bottom:0.6rem">🏛️</div><div style="font-family:'Orbitron',sans-serif;font-size:0.88rem;color:var(--gold);margin-bottom:0.25rem">ISRO Science Fund</div><div style="font-size:0.75rem;color:var(--text3);margin-bottom:0.65rem">Indian Space Research Organisation</div><div style="font-family:'Orbitron',sans-serif;font-size:1.2rem;color:var(--gold);margin:0.6rem 0">Up to ₹10 Lakhs</div><div style="font-size:0.76rem;color:var(--text2);margin-bottom:0.9rem">Astrophysics · Quantum Computing · Space Sciences</div><div style="display:flex;gap:0.45rem"><button class="btn b-gold" onclick="go('submit')" style="flex:1;padding:0.42rem;font-size:0.75rem">Submit Paper</button><button class="btn bs" onclick="go('grant-apply')" style="flex:1;padding:0.42rem;font-size:0.75rem">Apply Grant</button></div></div>
+      <div class="card" style="border-color:rgba(0,212,255,0.3)"><div style="font-size:2rem;margin-bottom:0.6rem">🔬</div><div style="font-family:'Orbitron',sans-serif;font-size:0.88rem;color:var(--accent);margin-bottom:0.25rem">DST Innovation Grant</div><div style="font-size:0.75rem;color:var(--text3);margin-bottom:0.65rem">Dept. of Science & Technology, India</div><div style="font-family:'Orbitron',sans-serif;font-size:1.2rem;color:var(--accent);margin:0.6rem 0">₹2–25 Lakhs</div><div style="font-size:0.76rem;color:var(--text2);margin-bottom:0.9rem">Applied Research · Technology Development</div><div style="display:flex;gap:0.45rem"><button class="btn bp" onclick="go('submit')" style="flex:1;padding:0.42rem;font-size:0.75rem">Submit Paper</button><button class="btn bs" onclick="go('grant-apply')" style="flex:1;padding:0.42rem;font-size:0.75rem">Apply Grant</button></div></div>
+      <div class="card" style="border-color:rgba(123,47,255,0.3)"><div style="font-size:2rem;margin-bottom:0.6rem">🧬</div><div style="font-family:'Orbitron',sans-serif;font-size:0.88rem;color:var(--accent2);margin-bottom:0.25rem">Wellcome Trust India</div><div style="font-size:0.75rem;color:var(--text3);margin-bottom:0.65rem">Global Health & Biomedical Research</div><div style="font-family:'Orbitron',sans-serif;font-size:1.2rem;color:var(--accent2);margin:0.6rem 0">$10K–$150K</div><div style="font-size:0.76rem;color:var(--text2);margin-bottom:0.9rem">Biology · Medicine · Public Health</div><div style="display:flex;gap:0.45rem"><button class="btn bp" onclick="go('submit')" style="flex:1;padding:0.42rem;font-size:0.75rem">Submit Paper</button><button class="btn bs" onclick="go('grant-apply')" style="flex:1;padding:0.42rem;font-size:0.75rem">Apply Grant</button></div></div>
+      <div class="card"><div style="font-size:2rem;margin-bottom:0.6rem">🌍</div><div style="font-family:'Orbitron',sans-serif;font-size:0.88rem;color:var(--accent3);margin-bottom:0.25rem">NSF Research Grant</div><div style="font-size:0.75rem;color:var(--text3);margin-bottom:0.65rem">National Science Foundation, USA</div><div style="font-family:'Orbitron',sans-serif;font-size:1.2rem;color:var(--accent3);margin:0.6rem 0">$50K–$500K</div><div style="font-size:0.76rem;color:var(--text2);margin-bottom:0.9rem">All STEM fields · International collaboration</div><div style="display:flex;gap:0.45rem"><button class="btn bp" onclick="go('submit')" style="flex:1;padding:0.42rem;font-size:0.75rem">Submit Paper</button><button class="btn bs" onclick="go('grant-apply')" style="flex:1;padding:0.42rem;font-size:0.75rem">Apply Grant</button></div></div>
+      <div class="card"><div style="font-size:2rem;margin-bottom:0.6rem">🏢</div><div style="font-family:'Orbitron',sans-serif;font-size:0.88rem;color:var(--gold);margin-bottom:0.25rem">Tata Trusts Research</div><div style="font-size:0.75rem;color:var(--text3);margin-bottom:0.65rem">Tata Group Science Initiative</div><div style="font-family:'Orbitron',sans-serif;font-size:1.2rem;color:var(--gold);margin:0.6rem 0">₹5–50 Lakhs</div><div style="font-size:0.76rem;color:var(--text2);margin-bottom:0.9rem">Energy · Materials · Chemistry · Environment</div><div style="display:flex;gap:0.45rem"><button class="btn bp" onclick="go('submit')" style="flex:1;padding:0.42rem;font-size:0.75rem">Submit Paper</button><button class="btn bs" onclick="go('grant-apply')" style="flex:1;padding:0.42rem;font-size:0.75rem">Apply Grant</button></div></div>
+      <div class="card"><div style="font-size:2rem;margin-bottom:0.6rem">🔭</div><div style="font-family:'Orbitron',sans-serif;font-size:0.88rem;color:var(--accent);margin-bottom:0.25rem">ERC Advanced Grant</div><div style="font-size:0.75rem;color:var(--text3);margin-bottom:0.65rem">European Research Council</div><div style="font-family:'Orbitron',sans-serif;font-size:1.2rem;color:var(--accent);margin:0.6rem 0">€2.5 Million</div><div style="font-size:0.76rem;color:var(--text2);margin-bottom:0.9rem">Frontier Research · Physics · Mathematics</div><div style="display:flex;gap:0.45rem"><button class="btn bp" onclick="go('submit')" style="flex:1;padding:0.42rem;font-size:0.75rem">Submit Paper</button><button class="btn bs" onclick="go('grant-apply')" style="flex:1;padding:0.42rem;font-size:0.75rem">Apply Grant</button></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== GRANT APPLY ==================== -->
+<div id="grant-apply" class="page">
+  <div class="wrap">
+    <div class="sec-hdr"><div class="sec-tag">Grant Application</div><h2 class="sec-title">Apply for <span>Research Grant</span></h2></div>
+    <div class="fwrap">
+      <div class="ft">Grant Proposal</div><div class="fs">Submit your research proposal for sponsor consideration</div>
+      <div class="alert a-info" style="margin-bottom:1.2rem">ℹ️ Your paper must be submitted first before applying for grants. <span style="color:var(--accent);cursor:pointer;font-weight:600" onclick="go('submit')">Submit Paper →</span></div>
+      <div class="fg"><label>Project Title *</label><input type="text" placeholder="Title of your proposed research project"></div>
+      <div class="fr"><div class="fg"><label>Amount Requested</label><input type="text" placeholder="e.g. ₹5,00,000"></div><div class="fg"><label>Duration</label><select><option>6 months</option><option>12 months</option><option>18 months</option><option>24 months</option></select></div></div>
+      <div class="fg"><label>Research Objectives *</label><textarea style="min-height:110px" placeholder="Primary objectives and expected outcomes..."></textarea></div>
+      <div class="fg"><label>Budget Breakdown</label><textarea placeholder="Equipment: ₹X · Personnel: ₹X · Travel: ₹X"></textarea></div>
+      <button class="btn bp" onclick="go('grant-submitted')" style="width:100%;margin-top:0.75rem">🚀 Submit Grant Proposal</button>
+    </div>
+  </div>
+</div>
+<div id="grant-submitted" class="page"><div class="wrap" style="text-align:center;padding-top:6rem"><div style="font-size:4rem">🏛️</div><div style="font-family:'Orbitron',sans-serif;font-size:1.5rem;color:var(--gold);margin:0.75rem 0">Grant Proposal Submitted!</div><p style="color:var(--text2);max-width:520px;margin:0 auto 1.5rem;line-height:1.8">Your proposal has been forwarded to the sponsor committee. Expected response within 30 business days.</p><div class="card" style="max-width:400px;margin:0 auto"><div style="font-family:'Orbitron',sans-serif;font-size:1rem;color:var(--gold)">GRANT-NXS-2025-0094</div></div><div style="display:flex;gap:0.85rem;justify-content:center;margin-top:1.5rem;flex-wrap:wrap"><button class="btn bp" onclick="go('dashboard')">📊 Dashboard</button><button class="btn bs" onclick="go('sponsors')">💰 More Sponsors</button></div></div></div>
+
+<!-- ==================== LEADERBOARD ==================== -->
+<div id="leaderboard" class="page">
+  <div class="wrap">
+    <div class="sec-hdr"><div class="sec-tag">Global Rankings</div><h2 class="sec-title">Research <span>Leaderboard</span></h2></div>
+    <div style="display:flex;gap:0.45rem;margin-bottom:1.5rem;flex-wrap:wrap" id="lb-btns">
+      <button class="btn bp" onclick="filterLB('global')" style="padding:0.42rem 1rem;font-size:0.76rem">🌍 Global</button>
+      <button class="btn bs" onclick="filterLB('india')" style="padding:0.42rem 1rem;font-size:0.76rem">🇮🇳 India</button>
+      <button class="btn bs" onclick="filterLB('math')" style="padding:0.42rem 1rem;font-size:0.76rem">📐 Math</button>
+      <button class="btn bs" onclick="filterLB('physics')" style="padding:0.42rem 1rem;font-size:0.76rem">⚛️ Physics</button>
+      <button class="btn bs" onclick="filterLB('bio')" style="padding:0.42rem 1rem;font-size:0.76rem">🧬 Biology</button>
+      <button class="btn bs" onclick="filterLB('cs')" style="padding:0.42rem 1rem;font-size:0.76rem">🤖 CS & AI</button>
+    </div>
+    <div class="card" id="lb-table"></div>
+    <div style="text-align:center;margin-top:1.5rem"><button class="btn bp" onclick="go('submit')">📝 Submit to Climb Rankings</button></div>
+  </div>
+</div>
+
+<!-- ==================== NEWS ==================== -->
+<div id="news" class="page">
+  <div class="wrap">
+    <div class="sec-hdr"><div class="sec-tag">Live Science News</div><h2 class="sec-title">New York Times <span>Science News</span></h2><p style="color:var(--text2);font-size:0.95rem;max-width:600px;margin:0 auto">Real-time science articles from The New York Times.</p></div>
+    <div style="display:flex;align-items:center;gap:0.85rem;margin-bottom:1.5rem;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:0.5rem;background:rgba(0,212,255,0.07);border:1px solid var(--border);border-radius:6px;padding:0.38rem 0.82rem;font-size:0.76rem;color:var(--accent)"><div style="width:6px;height:6px;border-radius:50%;background:var(--accent3);animation:pg 1.2s infinite"></div>Live · NYT Science</div>
+      <button class="btn bs" onclick="newsLoaded=false;loadNYTNews()" style="padding:0.38rem 0.82rem;font-size:0.76rem">🔄 Refresh</button>
+      <a href="https://www.nytimes.com/section/science" target="_blank" style="font-size:0.76rem;color:var(--text3);text-decoration:none">View on NYT.com ↗</a>
+    </div>
+    <div id="news-grid" class="g3"><div class="loading"><div class="spin"></div>Loading NYT Science news…</div></div>
+  </div>
+</div>
+<div id="news-detail" class="page"><div class="wrap"><button class="btn bs" onclick="go('news')" style="margin-bottom:1.2rem;padding:0.42rem 0.88rem;font-size:0.78rem">← Back to News</button><div style="max-width:780px;margin:0 auto"><span class="badge bb" style="margin-bottom:0.82rem;display:inline-block">🔬 Science</span><h1 id="nd-title" style="font-family:'Orbitron',sans-serif;font-size:1.4rem;font-weight:700;margin-bottom:0.62rem;line-height:1.4"></h1><div id="nd-meta" style="font-size:0.78rem;color:var(--text3);margin-bottom:1.4rem"></div><p id="nd-desc" style="color:var(--text2);line-height:1.9;font-size:0.92rem;margin-bottom:1.4rem"></p><a id="nd-link" href="#" target="_blank" class="btn bp" style="display:inline-block;text-decoration:none">Read Full Article on NYT ↗</a><div style="margin-top:2rem;padding-top:1.4rem;border-top:1px solid var(--border);display:flex;gap:0.65rem;flex-wrap:wrap"><button class="btn bs" onclick="go('submit')" style="font-size:0.8rem;padding:0.48rem 1rem">📝 Submit Related Research</button><button class="btn bs" onclick="go('categories')" style="font-size:0.8rem;padding:0.48rem 1rem">📚 Browse Category</button></div></div></div></div>
+
+<!-- ==================== SPONSOR REGISTER ==================== -->
+<div id="sponsor-register" class="page"><div class="wrap"><div class="sec-hdr"><div class="sec-tag">Become a Sponsor</div><h2 class="sec-title">Sponsor <span>Registration</span></h2></div><div class="fwrap"><div class="ft">Organization Details</div><div class="fs">Register as a NEXUS research sponsor</div><div class="fg"><label>Organization Name *</label><input type="text" placeholder="Full legal name"></div><div class="fr"><div class="fg"><label>Type *</label><select><option>Government Agency</option><option>University</option><option>Private Company</option><option>NGO/Foundation</option><option>Research Institute</option></select></div><div class="fg"><label>Country *</label><select><option>India</option><option>USA</option><option>UK</option><option>Germany</option><option>Japan</option><option>Other</option></select></div></div><div class="fr"><div class="fg"><label>Contact Name *</label><input type="text" placeholder="Primary contact"></div><div class="fg"><label>Official Email *</label><input type="email" placeholder="contact@org.org"></div></div><div class="fg"><label>Sponsorship Tier *</label><select><option>Platinum — ₹25L+</option><option>Gold — ₹10L+</option><option>Silver — ₹2L+</option><option>Event Sponsor</option></select></div><button class="btn bp" onclick="toast('✅ Sponsor registration submitted! Our team will contact you within 3 business days.')" style="width:100%;margin-top:0.75rem">🤝 Submit Registration</button></div></div></div>
+
+<!-- OTHER PAGES -->
+<div id="guidelines" class="page"><div class="wrap"><div class="sec-hdr"><div class="sec-tag">Policy</div><h2 class="sec-title">Research <span>Guidelines</span></h2></div><div class="card" style="max-width:760px;margin:0 auto"><div style="font-family:'Orbitron',sans-serif;font-size:0.82rem;color:var(--accent);margin-bottom:0.85rem">📋 SUBMISSION REQUIREMENTS</div><ul style="color:var(--text2);font-size:0.85rem;line-height:2.2;padding-left:1.2rem"><li>Submit as PDF only (max 25MB)</li><li>Abstract: 200–500 words</li><li>All figures embedded, minimum 300 DPI</li><li>References: APA, MLA, or Vancouver format</li><li>All equations must be numbered</li><li>Maximum 15% similarity (plagiarism check)</li></ul><button class="btn bp" onclick="go('submit')" style="margin-top:1rem;padding:0.52rem 1.4rem">Submit Your Paper →</button></div></div></div>
+<div id="privacy" class="page"><div class="wrap"><div class="sec-hdr"><div class="sec-tag">Legal</div><h2 class="sec-title">Privacy <span>Policy</span></h2></div><div class="card" style="max-width:760px;margin:0 auto"><div style="margin-bottom:1.2rem"><div style="font-weight:700;color:var(--accent);margin-bottom:0.4rem">Firebase & Google Login</div><p style="color:var(--text2);font-size:0.85rem;line-height:1.8">When you sign in with Google, we receive your name, email, and profile picture via Firebase Authentication. We do not access your Gmail messages or contacts. Your submitted PDFs are stored in Firebase Storage under your unique user ID. All data is encrypted.</p></div><div><div style="font-weight:700;color:var(--accent);margin-bottom:0.4rem">Your Data Rights</div><p style="color:var(--text2);font-size:0.85rem;line-height:1.8">You can delete your account and all associated data at any time. Contact privacy@nexus-research.in.</p></div></div></div></div>
+<div id="terms" class="page"><div class="wrap"><div class="sec-hdr"><div class="sec-tag">Legal</div><h2 class="sec-title">Terms of <span>Service</span></h2></div><div class="card" style="max-width:760px;margin:0 auto"><div style="margin-bottom:1.2rem"><div style="font-weight:700;color:var(--accent);margin-bottom:0.4rem">1. Platform Usage</div><p style="color:var(--text2);font-size:0.85rem;line-height:1.8">NEXUS is for legitimate academic and scientific research only. By signing in with Google, you agree to these terms.</p></div><div><div style="font-weight:700;color:var(--accent);margin-bottom:0.4rem">2. Intellectual Property</div><p style="color:var(--text2);font-size:0.85rem;line-height:1.8">Authors retain copyright of their submitted work. NEXUS stores your PDF securely and provides a downloadable link.</p></div></div></div></div>
+
+<!-- TOAST -->
+<div id="toast" style="position:fixed;bottom:1.5rem;right:1.5rem;z-index:3000;background:rgba(0,20,50,0.97);border:1px solid var(--accent);border-radius:10px;padding:0.85rem 1.3rem;font-size:0.83rem;color:var(--accent3);font-family:'Share Tech Mono',monospace;max-width:320px;box-shadow:0 8px 30px rgba(0,0,30,0.5);display:none;animation:fadeIn 0.3s ease"></div>
+
+<script>
+// ─── PARTICLE CANVAS ───
+const canvas=document.getElementById('particle-canvas');
+const ctx=canvas.getContext('2d');
+function rc(){canvas.width=window.innerWidth;canvas.height=window.innerHeight;}
+rc();window.addEventListener('resize',rc);
+const fmls=['E=mc²','∑','∫','π','∇','∂','∞','ψ','φ','λ','Δ','√2','e^iπ','α','β','γ','Ω'];
+class P{constructor(){this.reset();}reset(){this.x=Math.random()*canvas.width;this.y=Math.random()*canvas.height;this.vx=(Math.random()-.5)*.3;this.vy=(Math.random()-.5)*.3;this.sz=Math.random()*1.4+.4;this.op=Math.random()*.3+.07;this.t=Math.random()>.72?'f':'d';this.f=fmls[Math.floor(Math.random()*fmls.length)];this.c=['#00d4ff','#7b2fff','#00ff88'][Math.floor(Math.random()*3)];}update(){this.x+=this.vx;this.y+=this.vy;if(this.x<0||this.x>canvas.width||this.y<0||this.y>canvas.height)this.reset();}draw(){ctx.globalAlpha=this.op;ctx.fillStyle=this.c;if(this.t==='f'){ctx.font='9px Share Tech Mono';ctx.fillText(this.f,this.x,this.y);}else{ctx.beginPath();ctx.arc(this.x,this.y,this.sz,0,Math.PI*2);ctx.fill();}}}
+const pts=[];for(let i=0;i<90;i++)pts.push(new P());
+function drawConn(){for(let i=0;i<pts.length;i++)for(let j=i+1;j<pts.length;j++){const dx=pts[i].x-pts[j].x,dy=pts[i].y-pts[j].y,d=Math.sqrt(dx*dx+dy*dy);if(d<85){ctx.globalAlpha=(1-d/85)*.06;ctx.strokeStyle='#00d4ff';ctx.lineWidth=.4;ctx.beginPath();ctx.moveTo(pts[i].x,pts[i].y);ctx.lineTo(pts[j].x,pts[j].y);ctx.stroke();}}}
+function anim(){ctx.clearRect(0,0,canvas.width,canvas.height);drawConn();pts.forEach(p=>{p.update();p.draw();});ctx.globalAlpha=1;requestAnimationFrame(anim);}
+anim();
+
+// ─── NAVIGATION ───
+function go(id){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  const t=document.getElementById(id);
+  if(t){t.classList.add('active');window.scrollTo({top:0,behavior:'smooth'});}
+  if(id==='news')loadNYTNews();
+  if(id==='submit')checkSubmitAuth();
+  if(id==='my-papers')loadMyPapersList();
+  if(id==='leaderboard')filterLB('global');
+  if(id==='categories')buildCatGrid();
+}
+
+// ─── TOAST ───
+function toast(msg,dur=3500){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.style.display='block';
+  clearTimeout(window._toastT);
+  window._toastT=setTimeout(()=>t.style.display='none',dur);
+}
+
+// ─── COUNTER ───
+function animCount(id,target){
+  const el=document.getElementById(id);if(!el)return;
+  let c=0;const step=Math.ceil(target/60);
+  const iv=setInterval(()=>{c=Math.min(c+step,target);el.textContent=c.toLocaleString();if(c>=target)clearInterval(iv);},20);
+}
+setTimeout(()=>{animCount('s1',8463);animCount('s2',347);animCount('s3',52);animCount('s4',120);},600);
+
+// ─── AUTH UI ───
+function applyLoginUI(user){
+  document.getElementById('nav-auth-btns').style.display='none';
+  const nu=document.getElementById('nav-user');
+  nu.style.display='flex';
+  const ph=document.getElementById('nav-photo');
+  if(user.photoURL){ph.src=user.photoURL;}else{ph.src='';ph.style.background='linear-gradient(135deg,#7b2fff,#00d4ff)';ph.style.display='flex';ph.style.alignItems='center';ph.style.justifyContent='center';}
+  document.getElementById('nav-uname').textContent=user.displayName||user.email;
+  // Update dashboard
+  const dn=document.getElementById('dash-name');if(dn)dn.textContent=user.displayName||'Researcher';
+  const de=document.getElementById('dash-email');if(de)de.textContent=user.email;
+  const di=document.getElementById('dash-nexusid');if(di)di.textContent='NEXUS ID: NXS-'+user.uid.substring(0,8).toUpperCase();
+}
+
+function resetAuthUI(){
+  document.getElementById('nav-auth-btns').style.display='flex';
+  document.getElementById('nav-user').style.display='none';
+}
+
+// ─── GMAIL LOGIN ───
+async function doGmailLogin(){
+  const msg=document.getElementById('login-msg');
+  msg.innerHTML='<div class="alert a-info">⏳ Opening Google sign-in popup…</div>';
+  try{
+    const fb=window._fb;
+    const result=await fb.signInWithPopup(fb.auth,fb.provider);
+    const user=result.user;
+    // Save user profile to Firestore
+    await fb.addDoc(fb.collection(fb.db,'users'),{
+      uid:user.uid,name:user.displayName,email:user.email,
+      photoURL:user.photoURL,loginAt:fb.serverTimestamp()
+    }).catch(()=>{});// ignore duplicate
+    toast('✅ Signed in as '+user.displayName);
+    go('dashboard');
+  }catch(e){
+    msg.innerHTML=`<div class="alert a-err">❌ Login failed: ${e.message}</div>`;
+  }
+}
+
+async function doSignOut(){
+  try{
+    await window._fb.signOut(window._fb.auth);
+    toast('👋 Signed out successfully');
+    go('hero');
+  }catch(e){toast('Error signing out: '+e.message);}
+}
+
+// ─── CHECK SUBMIT AUTH ───
+function checkSubmitAuth(){
+  const warn=document.getElementById('submit-login-warn');
+  const form=document.getElementById('submit-form-wrap');
+  if(window._currentUser){
+    warn.style.display='none';form.style.display='block';
+    // Pre-fill name
+    const nameEl=document.getElementById('s-coauthors');
+  }else{
+    warn.style.display='block';form.style.display='none';
+  }
+}
+
+// ─── SUBCATEGORIES ───
+const subcats={
+  'Pure Mathematics':['Number Theory','Topology','Abstract Algebra','Real Analysis','Complex Analysis','Combinatorics','Graph Theory','Logic & Set Theory'],
+  'Applied Mathematics':['Differential Equations','Numerical Methods','Probability Theory','Statistics','Optimization','Game Theory'],
+  'Theoretical Physics':['Quantum Mechanics','String Theory','General Relativity','Particle Physics','Standard Model','Field Theory'],
+  'Experimental Physics':['Spectroscopy','Condensed Matter','Superconductivity','Particle Accelerators','Optics'],
+  'Astrophysics & Cosmology':['Black Holes','Dark Matter','Gravitational Waves','Galaxy Formation','Exoplanets'],
+  'Quantum Computing':['Quantum Algorithms','Qubits','Quantum Cryptography','Error Correction','Quantum ML'],
+  'Chemistry':['Organic Chemistry','Inorganic Chemistry','Physical Chemistry','Electrochemistry','Catalysis'],
+  'Biology & Life Sciences':['Molecular Biology','Genetics','Cell Biology','Neuroscience','CRISPR','Bioinformatics'],
+  'Computer Science & AI':['Machine Learning','Deep Learning','NLP','Computer Vision','Algorithms','Cryptography'],
+  'Nanotechnology':['Nanomaterials','Nanoelectronics','Nanomedicine','Carbon Nanotubes'],
+  'Environmental Science':['Climate Modeling','Atmospheric Chemistry','Renewable Energy','Ecosystem Analysis'],
+  'Interdisciplinary':['MathPhys','ChemBio','CS+Math','Biophysics','NeuroMath']
+};
+function updateSubcat(){
+  const cat=document.getElementById('s-cat')?.value;
+  const sc=document.getElementById('s-subcat');
+  if(!sc||!cat)return;
+  sc.innerHTML='<option>Select Sub-Category</option>';
+  (subcats[cat]||[]).forEach(s=>{const o=document.createElement('option');o.textContent=s;sc.appendChild(o);});
+}
+
+// ─── FILE SELECTION ───
+let selectedFile=null;
+function handleFileSelect(e){
+  const f=e.target.files[0];
+  if(!f){selectedFile=null;return;}
+  if(f.type!=='application/pdf'){toast('❌ Only PDF files are allowed!');e.target.value='';return;}
+  if(f.size>25*1024*1024){toast('❌ File too large! Maximum 25MB.');e.target.value='';return;}
+  selectedFile=f;
+  const fs=document.getElementById('file-selected');
+  fs.style.display='block';
+  fs.innerHTML=`✅ <strong>${f.name}</strong> — ${(f.size/1024/1024).toFixed(2)} MB — Ready to upload`;
+  document.getElementById('upzone-text').textContent=f.name;
+  toast('📄 PDF selected: '+f.name);
+}
+
+// ─── SUBMIT PAPER (with real Firebase upload) ───
+async function submitPaper(){
+  const user=window._currentUser;
+  if(!user){toast('❌ Please login first!');go('login');return;}
+
+  // Validate
+  const title=document.getElementById('s-title').value.trim();
+  const cat=document.getElementById('s-cat').value;
+  const abstract=document.getElementById('s-abstract').value.trim();
+  const keywords=document.getElementById('s-keywords').value.trim();
+  const college=document.getElementById('s-college').value.trim();
+  const dept=document.getElementById('s-dept').value.trim();
+  const orig=document.getElementById('s-orig').checked;
+  const agree=document.getElementById('s-agree').checked;
+
+  if(!title){toast('❌ Please enter paper title');return;}
+  if(!cat){toast('❌ Please select a category');return;}
+  if(!abstract||abstract.length<50){toast('❌ Please enter a proper abstract (min 50 words)');return;}
+  if(!keywords){toast('❌ Please enter keywords');return;}
+  if(!college){toast('❌ Please enter your college/university');return;}
+  if(!selectedFile){toast('❌ Please upload your PDF file');return;}
+  if(!orig||!agree){toast('❌ Please check both agreement boxes');return;}
+
+  const btn=document.getElementById('submit-btn');
+  btn.disabled=true;btn.textContent='⏳ Uploading PDF to Firebase…';
+
+  const msgEl=document.getElementById('submit-msg');
+  msgEl.innerHTML='<div class="alert a-info">📤 Uploading PDF to Firebase Cloud Storage…</div>';
+
+  // Show progress bar
+  const prog=document.getElementById('upload-prog');
+  prog.classList.add('show');
+  document.getElementById('up-fname').textContent=selectedFile.name;
+
+  try{
+    const fb=window._fb;
+    const paperId='NXS-'+Date.now();
+
+    // ── STEP 1: Upload PDF to Firebase Storage ──
+    const storageRef=fb.ref(fb.storage,`papers/${user.uid}/${paperId}_${selectedFile.name}`);
+    const uploadTask=fb.uploadBytesResumable(storageRef,selectedFile);
+
+    const pdfUrl=await new Promise((resolve,reject)=>{
+      uploadTask.on('state_changed',
+        (snap)=>{
+          const pct=Math.round((snap.bytesTransferred/snap.totalBytes)*100);
+          document.getElementById('up-bar').style.width=pct+'%';
+          document.getElementById('up-percent').textContent=pct+'%';
+          document.getElementById('up-status').textContent=
+            pct<100?`Uploading… ${pct}% complete`:'✅ PDF uploaded! Saving to database…';
+        },
+        (err)=>reject(err),
+        async()=>{
+          const url=await fb.getDownloadURL(uploadTask.snapshot.ref);
+          resolve(url);
+        }
+      );
+    });
+
+    // ── STEP 2: Save all data to Firestore ──
+    msgEl.innerHTML='<div class="alert a-info">🗄️ Saving paper details to database…</div>';
+    const docRef=await fb.addDoc(fb.collection(fb.db,'papers'),{
+      paperId,
+      title,
+      category:cat,
+      subCategory:document.getElementById('s-subcat').value,
+      abstract,
+      keywords,
+      college,
+      department:dept,
+      researchType:document.getElementById('s-type').value,
+      coAuthors:document.getElementById('s-coauthors').value,
+      funding:document.getElementById('s-funding').value,
+      // Author info from Gmail
+      authorName:user.displayName,
+      authorEmail:user.email,
+      authorUID:user.uid,
+      authorPhoto:user.photoURL||'',
+      // File info
+      fileName:selectedFile.name,
+      fileSize:(selectedFile.size/1024/1024).toFixed(2)+' MB',
+      pdfURL:pdfUrl, // ← Permanent Firebase Storage URL
+      // Status & timestamps
+      status:'Under Review',
+      submittedAt:fb.serverTimestamp(),
+      views:0,
+      citations:0
+    });
+
+    // ── STEP 3: Show Success ──
+    document.getElementById('success-id').textContent=paperId;
+    document.getElementById('success-details').innerHTML=`
+      <div>📝 <strong>Title:</strong> ${title}</div>
+      <div>📚 <strong>Category:</strong> ${cat}</div>
+      <div>🏫 <strong>Institution:</strong> ${college}</div>
+      <div>👤 <strong>Author:</strong> ${user.displayName}</div>
+      <div>📄 <strong>File:</strong> ${selectedFile.name} (${(selectedFile.size/1024/1024).toFixed(2)} MB)</div>
+      <div>🟡 <strong>Status:</strong> Under Review</div>`;
+    document.getElementById('success-pdf-url').textContent=pdfUrl;
+
+    toast('🎉 Paper submitted & PDF saved to Firebase!',4000);
+    go('submit-success');
+
+  }catch(e){
+    console.error(e);
+    msgEl.innerHTML=`<div class="alert a-err">❌ Error: ${e.message}</div>`;
+    btn.disabled=false;btn.textContent='🚀 Submit & Upload to Cloud';
+    prog.classList.remove('show');
+  }
+}
+
+// ─── LOAD MY PAPERS (from Firestore) ───
+let papersLoaded=false;
+async function loadMyPapers(){
+  const user=window._currentUser;
+  if(!user)return;
+  try{
+    const fb=window._fb;
+    const q=fb.query(fb.collection(fb.db,'papers'),fb.orderBy('submittedAt','desc'));
+    const snap=await fb.getDocs(q);
+    let mine=[];
+    snap.forEach(d=>{const data=d.data();if(data.authorUID===user.uid)mine.push(data);});
+    // Update dashboard count
+    const dc=document.getElementById('dash-count');if(dc)dc.textContent=mine.length;
+    const db2=document.getElementById('dash-paperbadge');if(db2)db2.textContent=mine.length+' Papers';
+    // Update mini table in dashboard
+    const t=document.getElementById('my-papers-table');
+    if(t){
+      if(mine.length===0){t.innerHTML='<div style="color:var(--text3);font-size:0.82rem;padding:1rem;text-align:center">No papers yet. <span style="color:var(--accent);cursor:pointer" onclick="go(\'submit\')">Submit your first paper →</span></div>';}
+      else{t.innerHTML=`<table><thead><tr><th>Title</th><th>Category</th><th>Status</th><th>PDF</th></tr></thead><tbody>${mine.slice(0,5).map(p=>`<tr><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.title}</td><td><span class="badge bb" style="font-size:0.62rem">${p.category}</span></td><td><span class="badge bg2">${p.status||'Review'}</span></td><td><a href="${p.pdfURL}" target="_blank" style="color:var(--accent);font-size:0.75rem;text-decoration:none">📥 Download</a></td></tr>`).join('')}</tbody></table>`;}
+    }
+  }catch(e){console.log('Papers load:',e.message);}
+}
+
+async function loadMyPapersList(){
+  const user=window._currentUser;
+  const list=document.getElementById('my-papers-list');
+  if(!list)return;
+  if(!user){
+    list.innerHTML='<div class="alert a-warn" style="max-width:500px;margin:0 auto">⚠️ Please login to view your papers.<br><button class="btn bp" onclick="go(\'login\')" style="margin-top:0.65rem;width:100%">Login with Gmail</button></div>';
+    return;
+  }
+  list.innerHTML='<div class="loading"><div class="spin"></div>Loading from Firebase…</div>';
+  try{
+    const fb=window._fb;
+    const q=fb.query(fb.collection(fb.db,'papers'),fb.orderBy('submittedAt','desc'));
+    const snap=await fb.getDocs(q);
+    let mine=[];
+    snap.forEach(d=>{const data=d.data();if(data.authorUID===user.uid)mine.push({...data,id:d.id});});
+    if(mine.length===0){
+      list.innerHTML='<div style="text-align:center;padding:3rem"><div style="font-size:3rem;margin-bottom:1rem">📭</div><div style="color:var(--text2);margin-bottom:1rem">You haven\'t submitted any papers yet.</div><button class="btn bp" onclick="go(\'submit\')">Submit Your First Paper →</button></div>';
+      return;
+    }
+    list.innerHTML=mine.map(p=>`
+      <div class="card" style="margin-bottom:1rem">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:0.65rem;margin-bottom:0.85rem">
+          <div style="flex:1">
+            <div style="font-weight:700;font-size:0.95rem;margin-bottom:0.3rem">${p.title}</div>
+            <div style="font-size:0.75rem;color:var(--text3)">${p.college||''} · ${p.department||''}</div>
+          </div>
+          <span class="badge bg2">${p.status||'Under Review'}</span>
+        </div>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.82rem">
+          <span class="badge bb">${p.category}</span>
+          ${p.subCategory?`<span class="badge bp2">${p.subCategory}</span>`:''}
+          <span class="badge" style="background:rgba(255,215,0,0.1);color:var(--gold);border:1px solid rgba(255,215,0,0.3)">${p.fileSize||''}</span>
+        </div>
+        <div style="font-size:0.8rem;color:var(--text2);margin-bottom:0.82rem;line-height:1.6">${p.abstract?p.abstract.substring(0,180)+'…':''}</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.65rem">
+          <div style="font-family:'Share Tech Mono',monospace;font-size:0.7rem;color:var(--text3)">${p.paperId||p.id}</div>
+          <div style="display:flex;gap:0.45rem;flex-wrap:wrap">
+            ${p.pdfURL?`<a href="${p.pdfURL}" target="_blank" class="btn bp" style="padding:0.35rem 0.85rem;font-size:0.75rem;text-decoration:none">📥 Download PDF</a>`:''}
+            <button class="btn bs" onclick="go('sponsors')" style="padding:0.35rem 0.85rem;font-size:0.75rem">💰 Apply for Sponsor</button>
+          </div>
+        </div>
+      </div>`).join('');
+  }catch(e){
+    list.innerHTML=`<div class="alert a-err">❌ Error loading papers: ${e.message}</div>`;
+  }
+}
+
+// ─── CATEGORIES GRID ───
+const catData=[
+  {icon:'📐',name:'Pure Mathematics',color:'var(--accent)',formula:'ζ(s)=Σn⁻ˢ · Euler: e^(iπ)+1=0',count:'1,247',page:'cat-math'},
+  {icon:'📊',name:'Applied Mathematics',color:'var(--accent2)',formula:'∂u/∂t=α∇²u · Fourier series',count:'986',page:'cat-amath'},
+  {icon:'⚛️',name:'Theoretical Physics',color:'var(--accent3)',formula:'Ĥψ=iℏ∂ψ/∂t · E=mc²',count:'1,534',page:'cat-tphys'},
+  {icon:'🔭',name:'Experimental Physics',color:'var(--accent4)',formula:'σ_x·σ_p≥ℏ/2',count:'892',page:'cat-ephys'},
+  {icon:'🌌',name:'Astrophysics & Cosmology',color:'var(--gold)',formula:'r_s=2GM/c² · H₀≈70 km/s/Mpc',count:'743',page:'cat-astro'},
+  {icon:'💻',name:'Quantum Computing',color:'var(--accent)',formula:'|ψ⟩=α|0⟩+β|1⟩',count:'618',page:'cat-qcomp'},
+  {icon:'🧪',name:'Chemistry',color:'var(--accent2)',formula:'ΔG=ΔH-TΔS · Kₐ=[H⁺][A⁻]/[HA]',count:'1,123',page:'cat-chem'},
+  {icon:'🧬',name:'Biology & Life Sciences',color:'var(--accent3)',formula:'DNA→mRNA→Protein · CRISPR',count:'1,389',page:'cat-bio'},
+  {icon:'🤖',name:'Computer Science & AI',color:'var(--accent4)',formula:'O(n log n) · ∂L/∂w=-η∇L(w)',count:'2,016',page:'cat-cs'},
+  {icon:'🔬',name:'Nanotechnology',color:'var(--gold)',formula:'E_n=ℏ²π²n²/2mL²',count:'445',page:'cat-nano'},
+  {icon:'🌍',name:'Environmental Science',color:'var(--accent)',formula:'CO₂+H₂O⇌H₂CO₃ · ΔT=λ·ΔF',count:'674',page:'cat-env'},
+  {icon:'🔀',name:'Interdisciplinary',color:'var(--accent2)',formula:'MathPhys · ChemBio · CS+Math',count:'394',page:'cat-inter'}
+];
+function buildCatGrid(){
+  const g=document.getElementById('cat-grid');if(!g||g.children.length>0)return;
+  catData.forEach(c=>{
+    const d=document.createElement('div');
+    d.className='card';d.style.cursor='pointer';d.style.borderColor=`${c.color}33`;
+    d.style.position='relative';d.style.overflow='hidden';
+    d.innerHTML=`
+      <div style="position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,${c.color},var(--accent2))"></div>
+      <div style="font-size:2rem;margin-bottom:0.65rem">${c.icon}</div>
+      <div style="font-family:'Orbitron',sans-serif;font-size:0.85rem;font-weight:700;color:${c.color};margin-bottom:0.4rem">${c.name}</div>
+      <div style="font-family:'Share Tech Mono',monospace;font-size:0.7rem;color:var(--accent3);margin-bottom:0.65rem;line-height:1.6">${c.formula}</div>
+      <div style="font-size:0.72rem;color:var(--text3);margin-bottom:0.85rem;font-family:'Share Tech Mono',monospace">📄 ${c.count} papers</div>
+      <button class="btn bp" onclick="event.stopPropagation();go('submit')" style="width:100%;padding:0.42rem;font-size:0.76rem">Submit Paper →</button>`;
+    g.appendChild(d);
+  });
+}
+
+// ─── LEADERBOARD ───
+const lbData={
+  global:[{r:1,av:'AP',n:'Prof. Anand Pandit',i:'IISc Bangalore · Theoretical Physics',bl:'Platinum',s:'H:47 · 12,340 pts',g:'linear-gradient(135deg,#7b2fff,#00d4ff)'},
+    {r:2,av:'SR',n:'Dr. Sofia Rodriguez',i:'MIT · Quantum Computing',bl:'Gold',s:'H:39 · 10,820 pts',g:'linear-gradient(135deg,#1a73e8,#00d4ff)'},
+    {r:3,av:'KT',n:'Dr. Kenji Tanaka',i:'Tokyo University · Mathematics',bl:'Gold',s:'H:35 · 9,750 pts',g:'linear-gradient(135deg,#00ff88,#7b2fff)'},
+    {r:4,av:'PS',n:'Dr. Priya Sharma',i:'IIT Bombay · Quantum Physics',bl:'Silver',s:'H:28 · 8,420 pts',g:'linear-gradient(135deg,#00ff88,#00d4ff)'},
+    {r:5,av:'ML',n:'Prof. Marie Laurent',i:'École Polytechnique · Chemistry',bl:'Silver',s:'H:31 · 8,190 pts',g:'linear-gradient(135deg,#ff6b35,#7b2fff)'},
+    {r:6,av:'RK',n:'Dr. Ravi Kumar',i:'TIFR Mumbai · Mathematics',bl:'Bronze',s:'H:26 · 7,640 pts',g:'linear-gradient(135deg,#ffd700,#ff6b35)'},
+    {r:7,av:'EP',n:'Dr. Elena Petrov',i:'Moscow State · Genetics',bl:'Bronze',s:'H:24 · 7,210 pts',g:'linear-gradient(135deg,#ff6b35,#ffd700)'},
+    {r:8,av:'WC',n:'Prof. Wei Chen',i:'Peking University · Applied Math',bl:'Emerging',s:'H:22 · 6,890 pts',g:'linear-gradient(135deg,#7b2fff,#00ff88)'}],
+  india:[{r:1,av:'AP',n:'Prof. Anand Pandit',i:'IISc Bangalore',bl:'Platinum',s:'H:47 · 12,340 pts',g:'linear-gradient(135deg,#7b2fff,#00d4ff)'},
+    {r:2,av:'PS',n:'Dr. Priya Sharma',i:'IIT Bombay',bl:'Silver',s:'H:28 · 8,420 pts',g:'linear-gradient(135deg,#00ff88,#00d4ff)'},
+    {r:3,av:'RK',n:'Dr. Ravi Kumar',i:'TIFR Mumbai',bl:'Bronze',s:'H:26 · 7,640 pts',g:'linear-gradient(135deg,#ffd700,#ff6b35)'}],
+  math:[{r:1,av:'KT',n:'Dr. Kenji Tanaka',i:'Tokyo Univ · Number Theory',bl:'Gold',s:'H:35 · 9,750 pts',g:'linear-gradient(135deg,#00ff88,#7b2fff)'},
+    {r:2,av:'PS',n:'Dr. Priya Sharma',i:'IIT Bombay · Analysis',bl:'Silver',s:'H:28 · 8,420 pts',g:'linear-gradient(135deg,#00ff88,#00d4ff)'}],
+  physics:[{r:1,av:'AP',n:'Prof. Anand Pandit',i:'IISc Bangalore',bl:'Platinum',s:'H:47 · 12,340 pts',g:'linear-gradient(135deg,#7b2fff,#00d4ff)'},
+    {r:2,av:'SR',n:'Dr. Sofia Rodriguez',i:'MIT',bl:'Gold',s:'H:39 · 10,820 pts',g:'linear-gradient(135deg,#1a73e8,#00d4ff)'}],
+  bio:[{r:1,av:'EP',n:'Dr. Elena Petrov',i:'Moscow State · Genetics',bl:'Bronze',s:'H:24 · 7,210 pts',g:'linear-gradient(135deg,#ff6b35,#ffd700)'}],
+  cs:[{r:1,av:'SR',n:'Dr. Sofia Rodriguez',i:'MIT · AI & Quantum',bl:'Gold',s:'H:39 · 10,820 pts',g:'linear-gradient(135deg,#1a73e8,#00d4ff)'},
+    {r:2,av:'WC',n:'Prof. Wei Chen',i:'Peking Univ · ML',bl:'Emerging',s:'H:22 · 6,890 pts',g:'linear-gradient(135deg,#7b2fff,#00ff88)'}]
+};
+const rankStyle={1:'color:var(--gold)',2:'color:#c0c0c0',3:'color:#cd7f32'};
+function filterLB(type){
+  const t=document.getElementById('lb-table');if(!t)return;
+  const data=lbData[type]||lbData.global;
+  t.innerHTML=data.map(d=>`
+    <div style="display:flex;align-items:center;gap:0.85rem;padding:0.68rem 1rem;border-bottom:1px solid var(--border);transition:background 0.2s;cursor:pointer" onmouseover="this.style.background='rgba(0,212,255,0.04)'" onmouseout="this.style.background='transparent'">
+      <div style="font-family:'Orbitron',sans-serif;font-size:1rem;font-weight:700;width:26px;text-align:center;${rankStyle[d.r]||'color:var(--text2)'}">${d.r}</div>
+      <div style="width:34px;height:34px;border-radius:50%;background:${d.g};display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.82rem;flex-shrink:0">${d.av}</div>
+      <div style="flex:1;min-width:0"><div style="font-weight:600;font-size:0.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${d.n}</div><div style="font-size:0.7rem;color:var(--text3)">${d.i}</div></div>
+      <span class="badge ${d.bl==='Platinum'?'bgold':d.bl==='Gold'?'bgold':d.bl==='Silver'?'bp2':d.bl==='Bronze'?'bb':'bg2'}">${d.bl}</span>
+      <div style="font-family:'Share Tech Mono',monospace;color:var(--accent3);font-size:0.82rem;white-space:nowrap">${d.s}</div>
+    </div>`).join('');
+}
+
+// ─── NYT NEWS ───
+let newsLoaded=false;
+async function loadNYTNews(){
+  if(newsLoaded)return;
+  const grid=document.getElementById('news-grid');if(!grid)return;
+  grid.innerHTML='<div class="loading"><div class="spin"></div>Loading New York Times Science news…</div>';
+  const rss='https://rss.nytimes.com/services/xml/rss/nyt/Science.xml';
+  const proxy='https://api.allorigins.win/get?url='+encodeURIComponent(rss);
+  try{
+    const res=await fetch(proxy);
+    const json=await res.json();
+    const xml=new DOMParser().parseFromString(json.contents,'text/xml');
+    const items=xml.querySelectorAll('item');
+    if(!items.length)throw new Error('empty');
+    newsLoaded=true;grid.innerHTML='';
+    items.forEach((item,i)=>{
+      if(i>=12)return;
+      const title=item.querySelector('title')?.textContent||'';
+      const desc=(item.querySelector('description')?.textContent||'').replace(/<[^>]+>/g,'');
+      const link=item.querySelector('link')?.textContent||'https://www.nytimes.com/section/science';
+      const date=item.querySelector('pubDate')?.textContent||'';
+      const cat=item.querySelector('category')?.textContent||'Science';
+      const d=document.createElement('div');d.className='card';d.style.cursor='pointer';
+      d.innerHTML=`<span class="badge bb" style="margin-bottom:0.5rem;display:inline-block">${cat}</span><div style="font-weight:700;font-size:0.9rem;margin:0.45rem 0;line-height:1.4;color:var(--text)">${title}</div><div style="font-size:0.78rem;color:var(--text2);line-height:1.55;margin-bottom:0.7rem">${desc.substring(0,160)}…</div><div style="display:flex;justify-content:space-between;font-size:0.7rem;color:var(--text3)"><span style="color:var(--accent);font-weight:600">📰 NYT Science</span><span>${new Date(date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span></div>`;
+      d.onclick=()=>{document.getElementById('nd-title').textContent=title;document.getElementById('nd-meta').textContent=date+' · New York Times Science';document.getElementById('nd-desc').textContent=desc;document.getElementById('nd-link').href=link;go('news-detail');};
+      grid.appendChild(d);
+    });
+  }catch(e){
+    newsLoaded=true;grid.innerHTML='';
+    const fallback=[
+      {t:'Scientists Detect Gravitational Waves From Neutron Star Collision',d:'International team announces detection of gravitational waves providing new insights into formation of heavy elements in the universe.',c:'Astrophysics',dt:'March 10, 2025'},
+      {t:'New Mathematical Proof Advances Riemann Hypothesis Understanding',d:'A landmark paper from Princeton advances the Riemann Hypothesis framework, one of the most significant mathematical achievements in decades.',c:'Mathematics',dt:'March 9, 2025'},
+      {t:'CRISPR Gene Editing Achieves New Precision Milestone in Trials',d:'Researchers report breakthrough precision in CRISPR therapies for sickle cell disease with off-target effects reduced by 98%.',c:'Biology',dt:'March 8, 2025'},
+      {t:'Quantum Computer Solves Complex Chemistry Simulation in Record Time',d:'IBM\'s latest quantum processor performed a full simulation of a complex molecular system, revolutionizing drug discovery.',c:'Quantum Computing',dt:'March 7, 2025'},
+      {t:'Carbon Capture Catalyst Achieves 95% Efficiency at Ambient Temperature',d:'Chemists designed an organometallic catalyst that captures CO₂ from air at room temperature, breaking all previous records.',c:'Chemistry',dt:'March 6, 2025'},
+      {t:'Topological Quantum Materials Could Revolutionize Computing',d:'New class of topological insulators maintains quantum coherence approaching room temperature, a breakthrough for practical quantum computers.',c:'Physics',dt:'March 5, 2025'},
+      {t:'Webb Telescope Captures Images of Earliest Galaxies Ever Observed',d:'James Webb Space Telescope captured light from galaxies formed just 280 million years after the Big Bang.',c:'Astrophysics',dt:'March 4, 2025'},
+      {t:'Brain-Computer Interface Enables Paralyzed Patients to Type',d:'Non-invasive BCI using neural decoding algorithms allows patients with complete paralysis to communicate at normal typing speeds.',c:'Neuroscience',dt:'March 3, 2025'},
+      {t:'AI Algorithm Predicts Protein Folding With Near-Perfect Accuracy',d:'Next-gen AI predicted 3D structure of over 200 million proteins, opening unprecedented avenues in drug design.',c:'Biology & AI',dt:'March 2, 2025'},
+      {t:'Solar Energy Storage Breakthrough Could Transform Grid Infrastructure',d:'New molten-salt battery achieves 94% round-trip efficiency at industrial scale, potentially solving renewable energy storage.',c:'Energy Science',dt:'March 1, 2025'},
+      {t:'Knot Theory Mathematics Finds Applications in DNA Biology',d:'Topological knot invariants applied to model DNA supercoiling, revealing new mechanisms in gene expression regulation.',c:'Mathematics',dt:'Feb 28, 2025'},
+      {t:'New Periodic Table Compound Discovered by Indian Research Team',d:'IISER Pune researchers synthesize a stable compound bridging two traditionally incompatible chemical groups.',c:'Chemistry',dt:'Feb 27, 2025'}
+    ];
+    fallback.forEach(a=>{
+      const d=document.createElement('div');d.className='card';d.style.cursor='pointer';
+      d.innerHTML=`<span class="badge bb" style="margin-bottom:0.5rem;display:inline-block">${a.c}</span><div style="font-weight:700;font-size:0.9rem;margin:0.45rem 0;line-height:1.4;color:var(--text)">${a.t}</div><div style="font-size:0.78rem;color:var(--text2);line-height:1.55;margin-bottom:0.7rem">${a.d}</div><div style="display:flex;justify-content:space-between;font-size:0.7rem;color:var(--text3)"><span style="color:var(--accent);font-weight:600">📰 NYT Science</span><span>${a.dt}</span></div>`;
+      d.onclick=()=>{document.getElementById('nd-title').textContent=a.t;document.getElementById('nd-meta').textContent=a.dt+' · New York Times Science';document.getElementById('nd-desc').textContent=a.d;document.getElementById('nd-link').href='https://www.nytimes.com/section/science';go('news-detail');};
+      grid.appendChild(d);
+    });
+  }
+}
+
+// ─── NAV SCROLL ───
+window.addEventListener('scroll',()=>{document.querySelector('nav').style.background=window.scrollY>20?'rgba(1,8,20,0.99)':'rgba(1,8,20,0.96)';});
+
+// ─── INIT ───
+filterLB('global');
+console.log('⚛ NEXUS v3.0 · Firebase Integrated · Gmail Auth · Cloud PDF Storage · Firestore DB');
+</script>
+</body>
+</html>
